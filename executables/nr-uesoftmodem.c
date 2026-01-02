@@ -91,9 +91,6 @@ unsigned short config_frames[4] = {2,9,11,13};
 #include "actor.h"
 #include "common/utils/ue_telemetry.h"
 
-int g_telemetry_sock = -1;
-struct sockaddr_un g_telemetry_dest_addr;
-
 THREAD_STRUCT thread_struct;
 nrUE_params_t nrUE_params = {0};
 
@@ -376,16 +373,11 @@ int main(int argc, char **argv)
   }
 
   // --- TELEMETRY SOCKET INIT ---
+#define UE_TELEMETRY
+#ifdef UE_TELEMETRY
   LOG_I(HW, "Initializing Telemetry Socket...\n");
-  g_telemetry_sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK, 0);
-  if (g_telemetry_sock >= 0) {
-      memset(&g_telemetry_dest_addr, 0, sizeof(g_telemetry_dest_addr));
-      g_telemetry_dest_addr.sun_family = AF_UNIX;
-      strncpy(g_telemetry_dest_addr.sun_path, OAI_TELEMETRY_SOCKET_PATH, sizeof(g_telemetry_dest_addr.sun_path) - 1);
-      LOG_I(HW, "Telemetry socket created (fd=%d), dest=%s\n", g_telemetry_sock, OAI_TELEMETRY_SOCKET_PATH);
-  } else {
-      LOG_E(HW, "Failed to create telemetry socket: %s\n", strerror(errno));
-  }
+  init_telemetry_subsystem();
+#endif // UE_TELEMETRY
 
   if (create_tasks_nrue(1) < 0) {
     printf("cannot create ITTI tasks\n");

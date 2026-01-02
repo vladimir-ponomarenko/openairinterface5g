@@ -38,9 +38,6 @@
 #include "SCHED_NR_UE/fapi_nr_ue_l1.h"
 #include "openair2/RRC/NR_UE/L2_interface_ue.h"
 #include "common/utils/ue_telemetry.h"
-// #include "PHY/phy_extern_nr_ue.h"
-#include "LAYER2/nr_rlc/nr_rlc_oai_api.h"
-#include "LAYER2/nr_pdcp/nr_pdcp_oai_api.h"
 
 
 extern PHY_VARS_NR_UE ***PHY_vars_UE_g;
@@ -49,57 +46,6 @@ extern struct sockaddr_un g_telemetry_dest_addr;
 #define MAX_IF_MODULES 100
 
 static nr_ue_if_module_t *nr_ue_if_module_inst[MAX_IF_MODULES];
-
-static void collect_and_send_telemetry(NR_UE_MAC_INST_t *mac, int frame, int slot) {
-
-  if (g_telemetry_sock < 0) {
-        g_telemetry_sock = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK, 0);
-        if (g_telemetry_sock >= 0) {
-            memset(&g_telemetry_dest_addr, 0, sizeof(g_telemetry_dest_addr));
-            g_telemetry_dest_addr.sun_family = AF_UNIX;
-            strncpy(g_telemetry_dest_addr.sun_path, OAI_TELEMETRY_SOCKET_PATH, sizeof(g_telemetry_dest_addr.sun_path) - 1);
-        } else {
-            return;
-        }
-    }
-
-    ue_telemetry_msg_t msg = {0};
-    msg.magic = TELEMETRY_MAGIC;
-
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    msg.timestamp_ns = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-
-    msg.frame = frame;
-    msg.slot = slot;
-    msg.rnti = mac->crnti;
-
-    if (PHY_vars_UE_g && PHY_vars_UE_g[mac->ue_id] && PHY_vars_UE_g[mac->ue_id][0]) {
-        PHY_VARS_NR_UE *phy = PHY_vars_UE_g[mac->ue_id][0];
-        PHY_NR_MEASUREMENTS *meas = &phy->measurements;
-
-        msg.ssb_rsrp_dbm = (int16_t)meas->ssb_rsrp_dBm[0];
-
-        msg.rssi_dbm = (int16_t)meas->rx_rssi_dBm[0];
-
-        msg.wideband_cqi_avg = (int16_t)meas->wideband_cqi_avg[0];
-
-        msg.snr_db   = (int16_t)meas->ssb_sinr_dB[0];
-    }
-
-
-    msg.dl_bler_ok = mac->stats.dl.rounds[0];
-    for (int i = 1; i < NR_MAX_HARQ_ROUNDS_FOR_STATS; i++) 
-        msg.dl_bler_err += mac->stats.dl.rounds[i];
-
-    // UL
-    msg.ul_bler_ok = mac->stats.ul.rounds[0];
-    for (int i = 1; i < NR_MAX_HARQ_ROUNDS_FOR_STATS; i++) 
-        msg.ul_bler_err += mac->stats.ul.rounds[i];
-
-    sendto(g_telemetry_sock, &msg, sizeof(msg), MSG_DONTWAIT, 
-           (struct sockaddr*)&g_telemetry_dest_addr, sizeof(g_telemetry_dest_addr));
-}
 
 void print_ue_mac_stats(const module_id_t mod, const int frame_rx, const int slot_rx)
 {
@@ -408,8 +354,9 @@ int nr_ue_dl_indication(nr_downlink_indication_t *dl_info)
     ret2 = nr_ue_dl_processing(mac, dl_info);
 
   // TODO: MOVE HARDCODE TO CONFIG FILE?
+  // Send telemetry using separate thread
   if (dl_info->slot % 100 == 0) {
-      collect_and_send_telemetry(mac, dl_info->frame, dl_info->slot);
+      queue_telemetry_packet(mac, dl_info->frame, dl_info->slot);
   }
 
   ret = pthread_mutex_unlock(&mac->if_mutex);
