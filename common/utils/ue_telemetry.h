@@ -73,6 +73,11 @@ typedef struct __attribute__((packed)) {
   uint32_t dl_bler_err; ///< Erroneous DL TBs
   uint32_t ul_bler_ok; ///< Successful UL TBs
   uint32_t ul_bler_err; ///< Erroneous UL TBs
+  uint32_t bad_dci; ///< Cumulated Bad DCI count
+  float ul_avg_code_rate; ///< Average UL code rate
+  float ul_avg_bps; ///< Average bits per symbol
+  float ul_avg_rb_per_tb; ///< Average RBs per TB
+  float ul_avg_sym_per_tb; ///< Average symbols per TB
 
 } ue_telemetry_msg_t;
 
@@ -207,6 +212,33 @@ static void queue_telemetry_packet(NR_UE_MAC_INST_t *mac, int frame, int slot)
   for (int i = 1; i < MAX_HARQ_ROUNDS; i++) {
     msg->ul_bler_err += mac->stats.ul.rounds[i];
   }
+
+  msg->bad_dci = mac->stats.bad_dci;
+
+  float nbul = 0;
+  for (int i = 0; i < MAX_HARQ_ROUNDS; i++) {
+    nbul += mac->stats.ul.rounds[i];
+  }
+  if (nbul < 1)
+    nbul = 1;
+
+  // Average Code Rate
+  if (mac->stats.ul.total_bits > 0) {
+    msg->ul_avg_code_rate = (float)mac->stats.ul.target_code_rate / (mac->stats.ul.total_bits * 1024 * 10);
+  } else {
+    msg->ul_avg_code_rate = 0.0f;
+  }
+
+  // Bits per Symbol
+  if (mac->stats.ul.total_symbols > 0) {
+    msg->ul_avg_bps = (float)mac->stats.ul.total_bits / mac->stats.ul.total_symbols;
+  } else {
+    msg->ul_avg_bps = 0.0f;
+  }
+
+  // Avg per TB
+  msg->ul_avg_rb_per_tb = (float)mac->stats.ul.rb_size / nbul;
+  msg->ul_avg_sym_per_tb = (float)mac->stats.ul.nr_of_symbols / nbul;
 
   pushNotifiedFIFO(&g_telemetry_ctx.telemetry_fifo, elt);
 }
