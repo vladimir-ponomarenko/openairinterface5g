@@ -46,6 +46,7 @@
 #define OAI_TELEMETRY_SOCKET_PATH "/tmp/oai_ue_telemetry.sock"
 #define TELEMETRY_MAGIC 0xFECA0506
 #define MAX_HARQ_ROUNDS 4
+#define TEL_MAX_BEAMS 4
 
 extern PHY_VARS_NR_UE ***PHY_vars_UE_g;
 
@@ -61,12 +62,20 @@ typedef struct __attribute__((packed)) {
   uint16_t rnti; ///< C-RNTI
   uint32_t frame; ///< System Frame Number
   uint32_t slot; ///< Slot Number
+  uint16_t phys_cell_id;       ///< Physical Cell ID
 
   // --- PHY ---
   int16_t ssb_rsrp_dbm; ///< RSRP of the synchronized SSB
   int16_t rssi_dbm; ///< Received Signal Strength Indicator
   int16_t wideband_cqi_avg; ///< Average Wideband CQI
   int16_t snr_db; ///< Signal-to-Noise Ratio
+  int16_t  n0_power_tot_dbm;   ///< Total estimated noise power (dBm)
+  uint8_t  rank;               ///< Rank indication
+  uint8_t  nb_antennas_rx;     ///< Number of RX antennas
+  uint32_t rx_total_gain_db; ///< Total gain of the RX chain
+  int32_t  n_ta_offset;        ///< Timing advance offset in TDD
+  int16_t  ssb_rsrp_beams[TEL_MAX_BEAMS]; ///< RSRP for first 4 beams
+  float    ssb_sinr_beams[TEL_MAX_BEAMS]; ///< SINR for first 4 beams
 
   // --- MAC BLER ---
   uint32_t dl_bler_ok; ///< Successful DL TBs
@@ -193,6 +202,16 @@ static void queue_telemetry_packet(NR_UE_MAC_INST_t *mac, int frame, int slot)
     msg->rssi_dbm = (int16_t)m->rx_rssi_dBm[0];
     msg->wideband_cqi_avg = (int16_t)m->wideband_cqi_avg[0];
     msg->snr_db = (int16_t)m->ssb_sinr_dB[0];
+    msg->phys_cell_id = phy->frame_parms.Nid_cell;
+    msg->n0_power_tot_dbm = m->n0_power_tot_dBm;
+    msg->rank = m->rank[0];
+    msg->nb_antennas_rx = m->nb_antennas_rx;
+    msg->rx_total_gain_db = phy->rx_total_gain_dB;
+    msg->n_ta_offset = phy->N_TA_offset;
+    for (int i = 0; i < TEL_MAX_BEAMS; i++) {
+        msg->ssb_rsrp_beams[i] = (int16_t)m->ssb_rsrp_dBm[i];
+        msg->ssb_sinr_beams[i] = m->ssb_sinr_dB[i];
+    }
   } else {
     msg->ssb_rsrp_dbm = 0;
     msg->rssi_dbm = 0;
